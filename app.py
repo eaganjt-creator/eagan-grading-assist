@@ -10,7 +10,18 @@ st.set_page_config(
     layout="wide"
 )
 
-# Purdue Old Gold & Black Styling + Boilermaker Train Animation
+# Initialize session state keys for inputs if not already present
+for key in ["prompt_input", "solution_input", "student_input", "evaluation_output"]:
+    if key not in st.session_state:
+        st.session_state[key] = ""
+
+def clear_all():
+    st.session_state["prompt_input"] = ""
+    st.session_state["solution_input"] = ""
+    st.session_state["student_input"] = ""
+    st.session_state["evaluation_output"] = ""
+
+# Purdue Old Gold & Black Styling + Boilermaker Locomotive Animation
 purdue_css = """
 <style>
     :root {
@@ -39,7 +50,8 @@ purdue_css = """
         font-size: 0.95rem;
     }
 
-    div.stButton > button:first-child {
+    /* Primary Gold Button */
+    div.stButton > button[kind="primary"] {
         background-color: #CEB888 !important;
         color: #000000 !important;
         font-weight: 700 !important;
@@ -48,17 +60,31 @@ purdue_css = """
         padding: 10px 24px !important;
         transition: all 0.2s ease-in-out;
     }
-    div.stButton > button:first-child:hover {
+    div.stButton > button[kind="primary"]:hover {
         background-color: #000000 !important;
         color: #CEB888 !important;
         border-color: #CEB888 !important;
     }
 
-    /* Boilermaker Train Track Animation */
-    @keyframes chuggaChugga {
-        0% { transform: translateX(-10%); }
-        50% { transform: translateX(85%); }
-        100% { transform: translateX(-10%); }
+    /* Secondary/Reset Button */
+    div.stButton > button[kind="secondary"] {
+        background-color: transparent !important;
+        color: #CEB888 !important;
+        font-weight: 600 !important;
+        border: 1px solid #CEB888 !important;
+        border-radius: 6px !important;
+        padding: 10px 20px !important;
+    }
+    div.stButton > button[kind="secondary"]:hover {
+        background-color: #373A36 !important;
+        color: #FFFFFF !important;
+    }
+
+    /* Solitary Steam Locomotive Track Animation */
+    @keyframes locomotiveTrack {
+        0% { transform: translateX(-5%); }
+        50% { transform: translateX(90%); }
+        100% { transform: translateX(-5%); }
     }
     .train-container {
         width: 100%;
@@ -66,21 +92,21 @@ purdue_css = """
         background: #111111;
         border: 2px solid #CEB888;
         border-radius: 8px;
-        padding: 14px 10px;
+        padding: 16px 10px;
         margin: 15px 0;
         text-align: left;
     }
     .train-animation {
         display: inline-block;
-        font-size: 2.2rem;
-        animation: chuggaChugga 4s ease-in-out infinite;
+        font-size: 2.4rem;
+        animation: locomotiveTrack 3.8s ease-in-out infinite;
     }
     .train-caption {
         color: #CEB888;
         font-weight: 600;
         font-size: 0.95rem;
         text-align: center;
-        margin-top: 5px;
+        margin-top: 6px;
     }
 </style>
 """
@@ -127,14 +153,16 @@ with col1:
     question_prompt = st.text_area(
         "Paste McGraw-Hill Connect Question:",
         height=140,
-        placeholder="Paste student's algorithmic problem statement..."
+        placeholder="Paste student's algorithmic problem statement...",
+        key="prompt_input"
     )
 
     st.subheader("2. Connect Master Solution")
     connect_solution = st.text_area(
         "Paste Connect Synthesized Solution:",
         height=180,
-        placeholder="Paste Connect's generated answer and calculations..."
+        placeholder="Paste Connect's generated answer and calculations...",
+        key="solution_input"
     )
 
 with col2:
@@ -142,22 +170,28 @@ with col2:
     student_submission = st.text_area(
         "Paste Student Answer (Anonymized - No Names/IDs):",
         height=400,
-        placeholder="Paste student response here..."
+        placeholder="Paste student response here...",
+        key="student_input"
     )
 
-evaluate_btn = st.button("Evaluate Submission", use_container_width=True)
+# Action Buttons: Evaluate & Reset
+btn_col1, btn_col2 = st.columns([3, 1])
+with btn_col1:
+    evaluate_btn = st.button("Evaluate Submission", type="primary", use_container_width=True)
+with btn_col2:
+    st.button("Reset / Clear All", type="secondary", on_click=clear_all, use_container_width=True)
 
 if evaluate_btn:
     if not (question_prompt.strip() and connect_solution.strip() and student_submission.strip()):
         st.warning("Please paste all three fields before running evaluation.", icon="⚠️")
     else:
-        # Boilermaker Special Train Animated Loader
+        # Animated Loader: Steam Engine Only
         loader_placeholder = st.empty()
         loader_placeholder.markdown(
             """
             <div class="train-container">
-                <div class="train-animation">🚂💨💨💨 🚃 🚃</div>
-                <div class="train-caption">Boilermaker Special chugging through the rubric... Evaluating submission!</div>
+                <div class="train-animation">🚂</div>
+                <div class="train-caption">Boilermaker Special evaluating submission against Connect rubric...</div>
             </div>
             """,
             unsafe_allow_html=True
@@ -219,104 +253,101 @@ FEEDBACK SUMMARY:
                 model="gemini-3.6-flash",
                 contents=prompt,
             )
-            output = response.text
-
-            # Remove train loader once generated
+            st.session_state["evaluation_output"] = response.text
             loader_placeholder.empty()
-
-            st.divider()
-
-            # Parse Similarity Meter & Feedback Bundle
-            similarity_level = "Low"
-            similarity_pct = 10
-            similarity_note = "Wording appears authentic."
-            bundle_text = output
-
-            if "SIMILARITY CONCERN LEVEL:" in output:
-                try:
-                    level_line = [line for line in output.split("\n") if "SIMILARITY CONCERN LEVEL:" in line][0]
-                    note_line = [line for line in output.split("\n") if "SIMILARITY NOTE:" in line][0]
-                    similarity_note = note_line.replace("SIMILARITY NOTE:", "").strip()
-                    
-                    if "High" in level_line:
-                        similarity_level = "High"
-                        similarity_pct = 85
-                    elif "Moderate" in level_line:
-                        similarity_level = "Moderate"
-                        similarity_pct = 50
-                    else:
-                        similarity_level = "Low"
-                        similarity_pct = 15
-                except Exception:
-                    pass
-
-            if "---STUDENT FEEDBACK BUNDLE---" in output:
-                parts = output.split("---STUDENT FEEDBACK BUNDLE---")
-                if len(parts) > 1:
-                    bundle_text = parts[1].replace("---END BUNDLE---", "").strip()
-
-            # Display Test Bank / Publisher Concern Meter
-            st.subheader("🔍 Test Bank / Solution Similarity Gauge")
-            col_meter, col_desc = st.columns([1, 2])
-            with col_meter:
-                if similarity_level == "High":
-                    st.error(f"⚠️ Concern Level: {similarity_level} (~{similarity_pct}%)")
-                elif similarity_level == "Moderate":
-                    st.warning(f"⚡ Concern Level: {similarity_level} (~{similarity_pct}%)")
-                else:
-                    st.success(f"✅ Concern Level: {similarity_level} (~{similarity_pct}%)")
-                st.progress(similarity_pct / 100.0)
-
-            with col_desc:
-                st.write(f"**Analysis:** {similarity_note}")
-                if similarity_level in ["High", "Moderate"]:
-                    st.caption("ℹ️ *TA Note: Verify if identical publisher phrasing or parentheticals were used.*")
-
-            st.divider()
-
-            # Student Feedback Section with Direct JavaScript Clipboard Copy Button
-            st.subheader("📋 McGraw-Hill Connect Complete Feedback Package")
-            st.caption("This bundle includes Score, Rubric Breakdown, and Narrative Feedback ready for Connect:")
-
-            st.text_area(
-                label="Complete Student Feedback",
-                value=bundle_text,
-                height=240,
-                key="feedback_display"
-            )
-
-            # High-visibility Copy Button using JS Clipboard API
-            escaped_bundle = bundle_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
-            copy_component = f"""
-            <div>
-                <button id="copyBtn" style="
-                    background-color: #CEB888;
-                    color: #000000;
-                    font-weight: 700;
-                    border: 2px solid #9D8249;
-                    border-radius: 6px;
-                    padding: 10px 18px;
-                    cursor: pointer;
-                    font-size: 14px;
-                    transition: background 0.2s;">
-                    📋 Copy Complete Feedback to Clipboard
-                </button>
-                <span id="copiedMsg" style="color: #CEB888; font-weight: bold; margin-left: 12px; display: none;">
-                    ✓ Copied to clipboard!
-                </span>
-            </div>
-            <script>
-                document.getElementById('copyBtn').addEventListener('click', function() {{
-                    navigator.clipboard.writeText(`{escaped_bundle}`).then(function() {{
-                        const msg = document.getElementById('copiedMsg');
-                        msg.style.display = 'inline';
-                        setTimeout(() => {{ msg.style.display = 'none'; }}, 3500);
-                    }});
-                }});
-            </script>
-            """
-            components.html(copy_component, height=55)
 
         except Exception as e:
             loader_placeholder.empty()
             st.error(f"Error calling model: {e}")
+
+# Render Evaluation Output if Available
+if st.session_state.get("evaluation_output"):
+    output = st.session_state["evaluation_output"]
+    st.divider()
+
+    similarity_level = "Low"
+    similarity_pct = 10
+    similarity_note = "Wording appears authentic."
+    bundle_text = output
+
+    if "SIMILARITY CONCERN LEVEL:" in output:
+        try:
+            level_line = [line for line in output.split("\n") if "SIMILARITY CONCERN LEVEL:" in line][0]
+            note_line = [line for line in output.split("\n") if "SIMILARITY NOTE:" in line][0]
+            similarity_note = note_line.replace("SIMILARITY NOTE:", "").strip()
+            
+            if "High" in level_line:
+                similarity_level = "High"
+                similarity_pct = 85
+            elif "Moderate" in level_line:
+                similarity_level = "Moderate"
+                similarity_pct = 50
+            else:
+                similarity_level = "Low"
+                similarity_pct = 15
+        except Exception:
+            pass
+
+    if "---STUDENT FEEDBACK BUNDLE---" in output:
+        parts = output.split("---STUDENT FEEDBACK BUNDLE---")
+        if len(parts) > 1:
+            bundle_text = parts[1].replace("---END BUNDLE---", "").strip()
+
+    st.subheader("🔍 Test Bank / Solution Similarity Gauge")
+    col_meter, col_desc = st.columns([1, 2])
+    with col_meter:
+        if similarity_level == "High":
+            st.error(f"⚠️ Concern Level: {similarity_level} (~{similarity_pct}%)")
+        elif similarity_level == "Moderate":
+            st.warning(f"⚡ Concern Level: {similarity_level} (~{similarity_pct}%)")
+        else:
+            st.success(f"✅ Concern Level: {similarity_level} (~{similarity_pct}%)")
+        st.progress(similarity_pct / 100.0)
+
+    with col_desc:
+        st.write(f"**Analysis:** {similarity_note}")
+        if similarity_level in ["High", "Moderate"]:
+            st.caption("ℹ️ *TA Note: Verify if identical publisher phrasing or parentheticals were used.*")
+
+    st.divider()
+
+    st.subheader("📋 McGraw-Hill Connect Complete Feedback Package")
+    st.caption("This bundle includes Score, Rubric Breakdown, and Narrative Feedback ready for Connect:")
+
+    st.text_area(
+        label="Complete Student Feedback",
+        value=bundle_text,
+        height=240,
+        key="feedback_display"
+    )
+
+    escaped_bundle = bundle_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+    copy_component = f"""
+    <div>
+        <button id="copyBtn" style="
+            background-color: #CEB888;
+            color: #000000;
+            font-weight: 700;
+            border: 2px solid #9D8249;
+            border-radius: 6px;
+            padding: 10px 18px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;">
+            📋 Copy Complete Feedback to Clipboard
+        </button>
+        <span id="copiedMsg" style="color: #CEB888; font-weight: bold; margin-left: 12px; display: none;">
+            ✓ Copied to clipboard!
+        </span>
+    </div>
+    <script>
+        document.getElementById('copyBtn').addEventListener('click', function() {{
+            navigator.clipboard.writeText(`{escaped_bundle}`).then(function() {{
+                const msg = document.getElementById('copiedMsg');
+                msg.style.display = 'inline';
+                setTimeout(() => {{ msg.style.display = 'none'; }}, 3500);
+            }});
+        }});
+    </script>
+    """
+    components.html(copy_component, height=55)
