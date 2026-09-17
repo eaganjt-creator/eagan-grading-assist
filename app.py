@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 from google import genai
 
 # Streamlit Page Setup
@@ -9,7 +10,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Purdue Old Gold & Black Styling
+# Purdue Old Gold & Black Styling + Boilermaker Train Animation
 purdue_css = """
 <style>
     :root {
@@ -53,9 +54,33 @@ purdue_css = """
         border-color: #CEB888 !important;
     }
 
-    .stTextArea textarea:focus {
-        border-color: #CEB888 !important;
-        box-shadow: 0 0 0 1px #CEB888 !important;
+    /* Boilermaker Train Track Animation */
+    @keyframes chuggaChugga {
+        0% { transform: translateX(-10%); }
+        50% { transform: translateX(85%); }
+        100% { transform: translateX(-10%); }
+    }
+    .train-container {
+        width: 100%;
+        overflow: hidden;
+        background: #111111;
+        border: 2px solid #CEB888;
+        border-radius: 8px;
+        padding: 14px 10px;
+        margin: 15px 0;
+        text-align: left;
+    }
+    .train-animation {
+        display: inline-block;
+        font-size: 2.2rem;
+        animation: chuggaChugga 4s ease-in-out infinite;
+    }
+    .train-caption {
+        color: #CEB888;
+        font-weight: 600;
+        font-size: 0.95rem;
+        text-align: center;
+        margin-top: 5px;
     }
 </style>
 """
@@ -126,8 +151,19 @@ if evaluate_btn:
     if not (question_prompt.strip() and connect_solution.strip() and student_submission.strip()):
         st.warning("Please paste all three fields before running evaluation.", icon="⚠️")
     else:
-        with st.spinner("Analyzing against Connect solution and Prof. Eagan's standards..."):
-            prompt = f"""
+        # Boilermaker Special Train Animated Loader
+        loader_placeholder = st.empty()
+        loader_placeholder.markdown(
+            """
+            <div class="train-container">
+                <div class="train-animation">🚂💨💨💨 🚃 🚃</div>
+                <div class="train-caption">Boilermaker Special chugging through the rubric... Evaluating submission!</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        prompt = f"""
 You are an expert tax accounting teaching assistant evaluating student exam submissions for Prof. Eagan at Purdue University's Daniels School of Business.
 
 TOTAL SCORE FOR THIS QUESTION: Exactly {total_points} Points.
@@ -138,12 +174,15 @@ EVALUATION CRITERIA & PROFESSOR'S GRADING PRINCIPLES:
    - Students must clearly label what each calculated number represents (e.g., 'Current Year Tax Savings', 'Present Value of Next Year Savings').
    - If a computation is mathematically correct but unlabelled, or if a final decision lacks explanatory justification, deduct 10% to 25% of that specific milestone.
 2. DYNAMIC POINT ALLOCATION (Total: {total_points} Points):
-   - Analyze the provided Connect Master Solution and distribute the {total_points} points logically across the core computational milestones and the conceptual recommendation/justification.
+   - Analyze the provided Connect Master Solution and distribute the {total_points} points logically across the computational milestones and the conceptual recommendation/justification.
 3. CARRY-THROUGH ERROR PROTECTION:
    - If an early computational error occurs, penalize that line item once.
    - Do NOT double-penalize downstream steps if the student properly applied correct formulas and logical decision-making to their erroneous intermediate numbers.
 4. REASONABLE ROUNDING:
    - Accept minor dollar differences resulting from rounded intermediate table factors.
+5. TEST BANK / PUBLISHER SOLUTION SIMILARITY ANALYSIS:
+   - Assess whether the student's submission displays unnatural or verbatim similarity to the Connect publisher solution wording (e.g., identical phrasing, matching parenthetical notes like '(i.e., assuming in one year)', or textbook-verbatim prose vs. typical authentic student wording).
+   - Rate similarity concern as: Low (0-25%), Moderate (26-60%), or High (61-100%).
 
 INPUT DATA:
 ----------------------------------------
@@ -157,42 +196,127 @@ INPUT DATA:
 {student_submission}
 ----------------------------------------
 
-OUTPUT FORMAT (STRICT):
-SCORE: [X] / {total_points}
+OUTPUT FORMAT (STRICT - PRESERVE LABELS EXACTLY):
+SIMILARITY CONCERN LEVEL: [Low | Moderate | High] ([Percentage]%)
+SIMILARITY NOTE: [1-2 sentences detailing whether the wording appears authentic or suspiciously copied from the solution manual/test bank.]
+
+---STUDENT FEEDBACK BUNDLE---
+TOTAL SCORE: [X] / {total_points}
 
 RUBRIC BREAKDOWN:
-- Milestone 1: [Earned]/[Max] - [Brief explanation. Note if deductions occurred for missing labels]
-- Milestone 2: [Earned]/[Max] - [Brief explanation]
-- Milestone 3: [Earned]/[Max] - [Brief explanation]
-- Milestone 4: [Earned]/[Max] - [Brief explanation]
-- Recommendation & Justification: [Earned]/[Max] - [Brief explanation]
+- Milestone 1: [Earned]/[Max] - [Brief note. Specify if deductions occurred for missing labels]
+- Milestone 2: [Earned]/[Max] - [Brief note]
+- Milestone 3: [Earned]/[Max] - [Brief note]
+- Milestone 4: [Earned]/[Max] - [Brief note]
+- Recommendation & Justification: [Earned]/[Max] - [Brief note]
 
-CONNECT FEEDBACK:
-[Write 2 to 4 concise, professional, and encouraging sentences directly to the student. Highlight what was done correctly, point out missing labels, calculation errors, or incomplete justifications, and state the correct final values. This text will be pasted directly into McGraw-Hill Connect.]
+FEEDBACK SUMMARY:
+[Write 2 to 3 concise, professional, and encouraging sentences directly to the student explaining strengths, specific mistakes, and correct targets.]
+---END BUNDLE---
 """
-            try:
-                # Direct call to gemini-3.6-flash
-                response = client.models.generate_content(
-                    model="gemini-3.6-flash",
-                    contents=prompt,
-                )
-                output = response.text
+        try:
+            response = client.models.generate_content(
+                model="gemini-3.6-flash",
+                contents=prompt,
+            )
+            output = response.text
 
-                st.divider()
-                st.subheader("Grading Summary")
+            # Remove train loader once generated
+            loader_placeholder.empty()
 
-                if "CONNECT FEEDBACK:" in output:
-                    breakdown, feedback = output.split("CONNECT FEEDBACK:", 1)
-                    st.markdown(breakdown.strip())
+            st.divider()
+
+            # Parse Similarity Meter & Feedback Bundle
+            similarity_level = "Low"
+            similarity_pct = 10
+            similarity_note = "Wording appears authentic."
+            bundle_text = output
+
+            if "SIMILARITY CONCERN LEVEL:" in output:
+                try:
+                    level_line = [line for line in output.split("\n") if "SIMILARITY CONCERN LEVEL:" in line][0]
+                    note_line = [line for line in output.split("\n") if "SIMILARITY NOTE:" in line][0]
+                    similarity_note = note_line.replace("SIMILARITY NOTE:", "").strip()
                     
-                    st.subheader("📋 Copyable Feedback for McGraw-Hill Connect")
-                    st.text_area(
-                        "Click the copy button in the top-right corner to paste into Connect:",
-                        value=feedback.strip(),
-                        height=150
-                    )
-                else:
-                    st.markdown(output)
+                    if "High" in level_line:
+                        similarity_level = "High"
+                        similarity_pct = 85
+                    elif "Moderate" in level_line:
+                        similarity_level = "Moderate"
+                        similarity_pct = 50
+                    else:
+                        similarity_level = "Low"
+                        similarity_pct = 15
+                except Exception:
+                    pass
 
-            except Exception as e:
-                st.error(f"Error calling model: {e}")
+            if "---STUDENT FEEDBACK BUNDLE---" in output:
+                parts = output.split("---STUDENT FEEDBACK BUNDLE---")
+                if len(parts) > 1:
+                    bundle_text = parts[1].replace("---END BUNDLE---", "").strip()
+
+            # Display Test Bank / Publisher Concern Meter
+            st.subheader("🔍 Test Bank / Solution Similarity Gauge")
+            col_meter, col_desc = st.columns([1, 2])
+            with col_meter:
+                if similarity_level == "High":
+                    st.error(f"⚠️ Concern Level: {similarity_level} (~{similarity_pct}%)")
+                elif similarity_level == "Moderate":
+                    st.warning(f"⚡ Concern Level: {similarity_level} (~{similarity_pct}%)")
+                else:
+                    st.success(f"✅ Concern Level: {similarity_level} (~{similarity_pct}%)")
+                st.progress(similarity_pct / 100.0)
+
+            with col_desc:
+                st.write(f"**Analysis:** {similarity_note}")
+                if similarity_level in ["High", "Moderate"]:
+                    st.caption("ℹ️ *TA Note: Verify if identical publisher phrasing or parentheticals were used.*")
+
+            st.divider()
+
+            # Student Feedback Section with Direct JavaScript Clipboard Copy Button
+            st.subheader("📋 McGraw-Hill Connect Complete Feedback Package")
+            st.caption("This bundle includes Score, Rubric Breakdown, and Narrative Feedback ready for Connect:")
+
+            st.text_area(
+                label="Complete Student Feedback",
+                value=bundle_text,
+                height=240,
+                key="feedback_display"
+            )
+
+            # High-visibility Copy Button using JS Clipboard API
+            escaped_bundle = bundle_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+            copy_component = f"""
+            <div>
+                <button id="copyBtn" style="
+                    background-color: #CEB888;
+                    color: #000000;
+                    font-weight: 700;
+                    border: 2px solid #9D8249;
+                    border-radius: 6px;
+                    padding: 10px 18px;
+                    cursor: pointer;
+                    font-size: 14px;
+                    transition: background 0.2s;">
+                    📋 Copy Complete Feedback to Clipboard
+                </button>
+                <span id="copiedMsg" style="color: #CEB888; font-weight: bold; margin-left: 12px; display: none;">
+                    ✓ Copied to clipboard!
+                </span>
+            </div>
+            <script>
+                document.getElementById('copyBtn').addEventListener('click', function() {{
+                    navigator.clipboard.writeText(`{escaped_bundle}`).then(function() {{
+                        const msg = document.getElementById('copiedMsg');
+                        msg.style.display = 'inline';
+                        setTimeout(() => {{ msg.style.display = 'none'; }}, 3500);
+                    }});
+                }});
+            </script>
+            """
+            components.html(copy_component, height=55)
+
+        except Exception as e:
+            loader_placeholder.empty()
+            st.error(f"Error calling model: {e}")
