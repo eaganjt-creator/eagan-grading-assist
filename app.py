@@ -4,7 +4,7 @@ from google import genai
 
 # Streamlit Page Setup
 st.set_page_config(
-    page_title="Prof. Eagan's Grading Assist Tool | Purdue Daniels",
+    page_title="Prof. Eagan's Grading Assist Tool | Daniels School of Business",
     page_icon="🚂",
     layout="wide"
 )
@@ -12,7 +12,6 @@ st.set_page_config(
 # Purdue Old Gold & Black Styling
 purdue_css = """
 <style>
-    /* Primary brand colors */
     :root {
         --purdue-gold: #CEB888;
         --purdue-dark-gold: #9D8249;
@@ -20,7 +19,6 @@ purdue_css = """
         --purdue-gray: #373A36;
     }
     
-    /* Header Accent */
     .brand-banner {
         background-color: #000000;
         border-bottom: 4px solid #CEB888;
@@ -40,7 +38,6 @@ purdue_css = """
         font-size: 0.95rem;
     }
 
-    /* Buttons styled in Purdue Gold */
     div.stButton > button:first-child {
         background-color: #CEB888 !important;
         color: #000000 !important;
@@ -56,7 +53,6 @@ purdue_css = """
         border-color: #CEB888 !important;
     }
 
-    /* Highlight Section Borders */
     .stTextArea textarea:focus {
         border-color: #CEB888 !important;
         box-shadow: 0 0 0 1px #CEB888 !important;
@@ -65,12 +61,12 @@ purdue_css = """
 """
 st.markdown(purdue_css, unsafe_allow_html=True)
 
-# Purdue Branded Header Banner
+# Daniels School of Business Banner
 st.markdown(
     """
     <div class="brand-banner">
         <h1>🚂 Prof. Eagan's Grading Assist Tool</h1>
-        <p>Mitchell E. Daniels, Jr. School of Business • Connect Exam Evaluator (20 Points)</p>
+        <p>Daniels School of Business</p>
     </div>
     """,
     unsafe_allow_html=True
@@ -87,6 +83,18 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
+# Top Bar: Point Scale Configuration
+top_col1, top_col2 = st.columns([1, 3])
+with top_col1:
+    total_points = st.number_input(
+        "Question Total Points:",
+        min_value=1,
+        max_value=100,
+        value=20,
+        step=1
+    )
+
+# App UI: Input Fields
 col1, col2 = st.columns(2)
 
 with col1:
@@ -97,9 +105,9 @@ with col1:
         placeholder="Paste student's algorithmic problem statement..."
     )
 
-    st.subheader("2. Connect Synthesized Solution")
+    st.subheader("2. Connect Master Solution")
     connect_solution = st.text_area(
-        "Paste Connect Master Solution:",
+        "Paste Connect Synthesized Solution:",
         height=180,
         placeholder="Paste Connect's generated answer and calculations..."
     )
@@ -122,27 +130,20 @@ if evaluate_btn:
             prompt = f"""
 You are an expert tax accounting teaching assistant evaluating student exam submissions for Prof. Eagan at Purdue University's Daniels School of Business.
 
-TOTAL SCORE: Exactly 20 Points.
+TOTAL SCORE FOR THIS QUESTION: Exactly {total_points} Points.
 
 EVALUATION CRITERIA & PROFESSOR'S GRADING PRINCIPLES:
 1. STRICT REQUIREMENT FOR LABELS & EXPLANATIONS:
-   - Mere numbers or naked calculations are INSUFFICIENT for full credit.
-   - Students must explicitly label what each calculated number represents (e.g., 'Present Value of Year 2 Savings', 'Current Year Tax Savings', etc.).
-   - If a student shows the correct mathematical operation but leaves it unlabeled or provides no narrative reasoning for their conclusion, deduct 10% to 25% of that specific line item.
-2. 20-POINT ALLOCATION:
-   - Analyze the provided Connect Master Solution and map out its core conceptual steps into a clean 20-point distribution.
-   - If this is the timing/present-value question, allocate:
-     * Current Year Tax Savings: 4 pts (Calculation + clear label)
-     * Next Year Nominal Savings: 4 pts (Calculation + clear label)
-     * Present Value Application: 5 pts (Correct discount factor + label)
-     * Net Incremental Savings: 3 pts (Comparison + label)
-     * Final Timing Recommendation & Justification: 4 pts (Clear recommendation + narrative rationale)
-   - If this is a different question, allocate the 20 points proportionally across its main computational and conceptual milestones.
+   - Naked calculations or unlabelled numbers do NOT qualify for full credit.
+   - Students must clearly label what each calculated number represents (e.g., 'Current Year Tax Savings', 'Present Value of Next Year Savings').
+   - If a computation is mathematically correct but unlabelled, or if a final decision lacks explanatory justification, deduct 10% to 25% of that specific milestone.
+2. DYNAMIC POINT ALLOCATION (Total: {total_points} Points):
+   - Analyze the provided Connect Master Solution and distribute the {total_points} points logically across the core computational milestones and the conceptual recommendation/justification.
 3. CARRY-THROUGH ERROR PROTECTION:
-   - If a student makes an early arithmetic error or selects an incorrect table factor, deduct points ONCE at that step.
-   - Do NOT double-penalize downstream steps if the student properly applied the correct logic to their intermediate erroneous figure.
+   - If an early computational error occurs, penalize that line item once.
+   - Do NOT double-penalize downstream steps if the student properly applied correct formulas and logical decision-making to their erroneous intermediate numbers.
 4. REASONABLE ROUNDING:
-   - Accept minor dollar differences resulting from rounding intermediate discount factors.
+   - Accept minor dollar differences resulting from rounded intermediate table factors.
 
 INPUT DATA:
 ----------------------------------------
@@ -157,22 +158,22 @@ INPUT DATA:
 ----------------------------------------
 
 OUTPUT FORMAT (STRICT):
-SCORE: [X] / 20
+SCORE: [X] / {total_points}
 
 RUBRIC BREAKDOWN:
-- Milestone 1: [Earned]/[Max] - [Brief explanation. Note if points were lost for missing labels]
+- Milestone 1: [Earned]/[Max] - [Brief explanation. Note if deductions occurred for missing labels]
 - Milestone 2: [Earned]/[Max] - [Brief explanation]
 - Milestone 3: [Earned]/[Max] - [Brief explanation]
 - Milestone 4: [Earned]/[Max] - [Brief explanation]
-- Milestone 5: [Earned]/[Max] - [Brief explanation]
+- Recommendation & Justification: [Earned]/[Max] - [Brief explanation]
 
 CONNECT FEEDBACK:
-[Write 2 to 4 concise, professional, and encouraging sentences directly to the student. Highlight what was executed well, specifically point out missing labels, calculation errors, or incomplete justifications, and summarize the proper outcome. This will be pasted directly into Connect.]
+[Write 2 to 4 concise, professional, and encouraging sentences directly to the student. Highlight what was done correctly, point out missing labels, calculation errors, or incomplete justifications, and state the correct final values. This text will be pasted directly into McGraw-Hill Connect.]
 """
             try:
-                # Using the stable 1.5 flash model
+                # Calls the current standard flash model on the GenAI SDK
                 response = client.models.generate_content(
-                    model="gemini-1.5-flash",
+                    model="gemini-2.5-flash",
                     contents=prompt,
                 )
                 output = response.text
@@ -186,7 +187,7 @@ CONNECT FEEDBACK:
                     
                     st.subheader("📋 Copyable Feedback for McGraw-Hill Connect")
                     st.text_area(
-                        "Click the copy button in top right of this box to paste into Connect:",
+                        "Click the copy button in the top-right corner to paste into Connect:",
                         value=feedback.strip(),
                         height=150
                     )
