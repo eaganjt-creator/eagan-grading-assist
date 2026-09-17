@@ -15,13 +15,23 @@ for key in ["prompt_input", "solution_input", "student_input", "evaluation_outpu
     if key not in st.session_state:
         st.session_state[key] = ""
 
+# Clear Helper Callbacks
+def clear_prompt():
+    st.session_state["prompt_input"] = ""
+
+def clear_solution():
+    st.session_state["solution_input"] = ""
+
+def clear_student():
+    st.session_state["student_input"] = ""
+
 def clear_all():
     st.session_state["prompt_input"] = ""
     st.session_state["solution_input"] = ""
     st.session_state["student_input"] = ""
     st.session_state["evaluation_output"] = ""
 
-# Purdue Old Gold & Black Styling + Boilermaker Locomotive Animation
+# Purdue Old Gold & Black Styling + Right-to-Left Locomotive Animation
 purdue_css = """
 <style>
     :root {
@@ -66,25 +76,29 @@ purdue_css = """
         border-color: #CEB888 !important;
     }
 
-    /* Secondary/Reset Button */
+    /* Secondary/Reset/Clear Buttons */
     div.stButton > button[kind="secondary"] {
         background-color: transparent !important;
         color: #CEB888 !important;
         font-weight: 600 !important;
         border: 1px solid #CEB888 !important;
         border-radius: 6px !important;
-        padding: 10px 20px !important;
+        padding: 6px 16px !important;
+        font-size: 0.85rem !important;
     }
     div.stButton > button[kind="secondary"]:hover {
         background-color: #373A36 !important;
         color: #FFFFFF !important;
     }
 
-    /* Solitary Steam Locomotive Track Animation */
-    @keyframes locomotiveTrack {
-        0% { transform: translateX(-5%); }
-        50% { transform: translateX(90%); }
-        100% { transform: translateX(-5%); }
+    /* Right-to-Left Full-Width Steam Locomotive Animation */
+    @keyframes locomotiveRightToLeft {
+        0% {
+            transform: translateX(100vw);
+        }
+        100% {
+            transform: translateX(-15vw);
+        }
     }
     .train-container {
         width: 100%;
@@ -92,14 +106,16 @@ purdue_css = """
         background: #111111;
         border: 2px solid #CEB888;
         border-radius: 8px;
-        padding: 16px 10px;
+        padding: 16px 0;
         margin: 15px 0;
-        text-align: left;
+        white-space: nowrap;
+        position: relative;
     }
     .train-animation {
         display: inline-block;
-        font-size: 2.4rem;
-        animation: locomotiveTrack 3.8s ease-in-out infinite;
+        font-size: 2.6rem;
+        will-change: transform;
+        animation: locomotiveRightToLeft 4s linear infinite;
     }
     .train-caption {
         color: #CEB888;
@@ -156,7 +172,9 @@ with col1:
         placeholder="Paste student's algorithmic problem statement...",
         key="prompt_input"
     )
+    st.button("Clear Question", type="secondary", on_click=clear_prompt, key="btn_clear_prompt")
 
+    st.write("")  # Visual spacer
     st.subheader("2. Connect Master Solution")
     connect_solution = st.text_area(
         "Paste Connect Synthesized Solution:",
@@ -164,6 +182,7 @@ with col1:
         placeholder="Paste Connect's generated answer and calculations...",
         key="solution_input"
     )
+    st.button("Clear Master Solution", type="secondary", on_click=clear_solution, key="btn_clear_sol")
 
 with col2:
     st.subheader("3. Student Submission")
@@ -173,8 +192,11 @@ with col2:
         placeholder="Paste student response here...",
         key="student_input"
     )
+    st.button("Clear Student Submission", type="secondary", on_click=clear_student, key="btn_clear_stud")
 
-# Action Buttons: Evaluate & Reset
+st.divider()
+
+# Action Buttons: Evaluate & Reset All
 btn_col1, btn_col2 = st.columns([3, 1])
 with btn_col1:
     evaluate_btn = st.button("Evaluate Submission", type="primary", use_container_width=True)
@@ -185,7 +207,7 @@ if evaluate_btn:
     if not (question_prompt.strip() and connect_solution.strip() and student_submission.strip()):
         st.warning("Please paste all three fields before running evaluation.", icon="⚠️")
     else:
-        # Animated Loader: Steam Engine Only
+        # Animated Loader: Solo Steam Engine Chugging Right-to-Left
         loader_placeholder = st.empty()
         loader_placeholder.markdown(
             """
