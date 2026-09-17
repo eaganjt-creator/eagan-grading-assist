@@ -5,31 +5,10 @@ from google import genai
 
 # Streamlit Page Setup
 st.set_page_config(
-    page_title="Prof. Eagan's Grading Assist Tool | Daniels School of Business",
-    page_icon="🚂",
+    page_title="Prof. Eagan's Grading Assist Tool | Purdue Daniels",
+    page_icon="📋",
     layout="wide"
 )
-
-# Initialize session state keys for inputs if not already present
-for key in ["prompt_input", "solution_input", "student_input", "evaluation_output"]:
-    if key not in st.session_state:
-        st.session_state[key] = ""
-
-# Clear Helper Callbacks
-def clear_prompt():
-    st.session_state["prompt_input"] = ""
-
-def clear_solution():
-    st.session_state["solution_input"] = ""
-
-def clear_student():
-    st.session_state["student_input"] = ""
-
-def clear_all():
-    st.session_state["prompt_input"] = ""
-    st.session_state["solution_input"] = ""
-    st.session_state["student_input"] = ""
-    st.session_state["evaluation_output"] = ""
 
 # Purdue Old Gold & Black Styling + Right-to-Left Locomotive Animation
 purdue_css = """
@@ -44,7 +23,7 @@ purdue_css = """
     .brand-banner {
         background-color: #000000;
         border-bottom: 4px solid #CEB888;
-        padding: 16px 24px;
+        padding: 18px 24px;
         border-radius: 8px;
         margin-bottom: 20px;
         color: white;
@@ -53,11 +32,12 @@ purdue_css = """
         color: #CEB888 !important;
         margin: 0;
         font-size: 1.85rem;
+        font-weight: 700;
     }
     .brand-banner p {
         color: #E0E0E0;
         margin: 4px 0 0 0;
-        font-size: 0.95rem;
+        font-size: 1.05rem;
     }
 
     /* Primary Gold Button */
@@ -76,14 +56,14 @@ purdue_css = """
         border-color: #CEB888 !important;
     }
 
-    /* Secondary/Reset/Clear Buttons */
+    /* Secondary/Clear Buttons */
     div.stButton > button[kind="secondary"] {
         background-color: transparent !important;
         color: #CEB888 !important;
         font-weight: 600 !important;
         border: 1px solid #CEB888 !important;
         border-radius: 6px !important;
-        padding: 6px 16px !important;
+        padding: 6px 14px !important;
         font-size: 0.85rem !important;
     }
     div.stButton > button[kind="secondary"]:hover {
@@ -93,12 +73,8 @@ purdue_css = """
 
     /* Right-to-Left Full-Width Steam Locomotive Animation */
     @keyframes locomotiveRightToLeft {
-        0% {
-            transform: translateX(100vw);
-        }
-        100% {
-            transform: translateX(-15vw);
-        }
+        0% { transform: translateX(100vw); }
+        100% { transform: translateX(-15vw); }
     }
     .train-container {
         width: 100%;
@@ -109,7 +85,6 @@ purdue_css = """
         padding: 16px 0;
         margin: 15px 0;
         white-space: nowrap;
-        position: relative;
     }
     .train-animation {
         display: inline-block;
@@ -128,19 +103,37 @@ purdue_css = """
 """
 st.markdown(purdue_css, unsafe_allow_html=True)
 
-# Daniels School of Business Banner
+# Purdue University Daniels School of Business Banner
 st.markdown(
     """
     <div class="brand-banner">
-        <h1>🚂 Prof. Eagan's Grading Assist Tool</h1>
-        <p>Daniels School of Business</p>
+        <h1>Prof. Eagan's Grading Assist Tool</h1>
+        <p>Purdue University Daniels School of Business</p>
     </div>
     """,
     unsafe_allow_html=True
 )
 
+# ----------------- SECURITY GATE -----------------
+expected_password = os.environ.get("APP_PASSWORD") or st.secrets.get("APP_PASSWORD", None)
+
+if "authenticated" not in st.session_state:
+    st.session_state["authenticated"] = False
+
+if expected_password and not st.session_state["authenticated"]:
+    st.subheader("🔒 Access Restricted")
+    pwd_input = st.text_input("Enter Access Password:", type="password")
+    if st.button("Unlock Tool", type="primary"):
+        if pwd_input == expected_password:
+            st.session_state["authenticated"] = True
+            st.rerun()
+        else:
+            st.error("Incorrect password. Access denied.")
+    st.stop()
+# --------------------------------------------------
+
 # API Key Retrieval
-api_key = os.environ.get("GEMINI_API_KEY")
+api_key = os.environ.get("GEMINI_API_KEY") or st.secrets.get("GEMINI_API_KEY", None)
 if not api_key:
     api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
 
@@ -150,7 +143,28 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Top Bar: Point Scale Configuration
+# Initialize session state keys for inputs
+for key in ["prompt_input", "solution_input", "student_input", "evaluation_output"]:
+    if key not in st.session_state:
+        st.session_state[key] = ""
+
+# Clear Callbacks
+def clear_prompt():
+    st.session_state["prompt_input"] = ""
+
+def clear_solution():
+    st.session_state["solution_input"] = ""
+
+def clear_student():
+    st.session_state["student_input"] = ""
+
+def clear_all():
+    st.session_state["prompt_input"] = ""
+    st.session_state["solution_input"] = ""
+    st.session_state["student_input"] = ""
+    st.session_state["evaluation_output"] = ""
+
+# Point Scale Configuration
 top_col1, top_col2 = st.columns([1, 3])
 with top_col1:
     total_points = st.number_input(
@@ -174,7 +188,7 @@ with col1:
     )
     st.button("Clear Question", type="secondary", on_click=clear_prompt, key="btn_clear_prompt")
 
-    st.write("")  # Visual spacer
+    st.write("")
     st.subheader("2. Connect Master Solution")
     connect_solution = st.text_area(
         "Paste Connect Synthesized Solution:",
@@ -227,17 +241,20 @@ TOTAL SCORE FOR THIS QUESTION: Exactly {total_points} Points.
 EVALUATION CRITERIA & PROFESSOR'S GRADING PRINCIPLES:
 1. STRICT REQUIREMENT FOR LABELS & EXPLANATIONS:
    - Naked calculations or unlabelled numbers do NOT qualify for full credit.
-   - Students must clearly label what each calculated number represents (e.g., 'Current Year Tax Savings', 'Present Value of Next Year Savings').
-   - If a computation is mathematically correct but unlabelled, or if a final decision lacks explanatory justification, deduct 10% to 25% of that specific milestone.
-2. DYNAMIC POINT ALLOCATION (Total: {total_points} Points):
-   - Analyze the provided Connect Master Solution and distribute the {total_points} points logically across the computational milestones and the conceptual recommendation/justification.
+   - Students must clearly label what each calculated number represents (e.g., 'Current Year Tax Savings', 'Recognized Gain', 'Present Value Factor').
+   - If a computation is mathematically correct but unlabelled, or if a required conclusion lacks explanatory justification, deduct 10% to 25% of that specific milestone.
+2. DYNAMIC MILESTONE BREAKDOWN (Total: {total_points} Points):
+   - Analyze the provided Connect Master Solution and break the problem down into its natural logical milestones (typically between 2 to 6 milestones depending on the problem's scope).
+   - Give each milestone a descriptive, informative name reflecting the actual tax or accounting milestone (do NOT use generic labels like 'Milestone 1').
+   - Ensure the sum of the maximum points across all milestones equals EXACTLY {total_points} points.
+   - Only include a 'Recommendation / Decision' milestone if the prompt explicitly asks for one.
 3. CARRY-THROUGH ERROR PROTECTION:
-   - If an early computational error occurs, penalize that line item once.
+   - If an early computational error occurs, penalize that milestone once.
    - Do NOT double-penalize downstream steps if the student properly applied correct formulas and logical decision-making to their erroneous intermediate numbers.
 4. REASONABLE ROUNDING:
    - Accept minor dollar differences resulting from rounded intermediate table factors.
 5. TEST BANK / PUBLISHER SOLUTION SIMILARITY ANALYSIS:
-   - Assess whether the student's submission displays unnatural or verbatim similarity to the Connect publisher solution wording (e.g., identical phrasing, matching parenthetical notes like '(i.e., assuming in one year)', or textbook-verbatim prose vs. typical authentic student wording).
+   - Assess whether the student's submission displays unnatural or verbatim similarity to the Connect publisher solution wording (e.g., identical phrasing, matching parenthetical notes, or textbook-verbatim prose vs. typical authentic student wording).
    - Rate similarity concern as: Low (0-25%), Moderate (26-60%), or High (61-100%).
 
 INPUT DATA:
@@ -260,11 +277,9 @@ SIMILARITY NOTE: [1-2 sentences detailing whether the wording appears authentic 
 TOTAL SCORE: [X] / {total_points}
 
 RUBRIC BREAKDOWN:
-- Milestone 1: [Earned]/[Max] - [Brief note. Specify if deductions occurred for missing labels]
-- Milestone 2: [Earned]/[Max] - [Brief note]
-- Milestone 3: [Earned]/[Max] - [Brief note]
-- Milestone 4: [Earned]/[Max] - [Brief note]
-- Recommendation & Justification: [Earned]/[Max] - [Brief note]
+- [Descriptive Milestone Name]: [Earned]/[Max] - [Brief note. Specify if deductions occurred for missing labels or arithmetic errors]
+- [Descriptive Milestone Name]: [Earned]/[Max] - [Brief note]
+[Include remaining descriptive milestones so points sum exactly to {total_points}]
 
 FEEDBACK SUMMARY:
 [Write 2 to 3 concise, professional, and encouraging sentences directly to the student explaining strengths, specific mistakes, and correct targets.]
@@ -282,7 +297,7 @@ FEEDBACK SUMMARY:
             loader_placeholder.empty()
             st.error(f"Error calling model: {e}")
 
-# Render Evaluation Output if Available
+# Render Evaluation Output
 if st.session_state.get("evaluation_output"):
     output = st.session_state["evaluation_output"]
     st.divider()
