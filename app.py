@@ -37,7 +37,6 @@ def sanitize_latex(text: str) -> str:
     text = re.sub(r"\$(\([^\$]+\))\$", r"\1", text)
 
     # Remove inline math syntax wrapping without touching regular currency like $24,000
-    # Matches $...$ containing words or operators (+, -, *, /, =)
     text = re.sub(r"\$([A-Za-z\s\+\-\*\/\=\(\)]+)\$", r"\1", text)
 
     # Clean leftover backslashes
@@ -184,7 +183,7 @@ default_states = {
     "solution_input": "",
     "student_input": "",
     "evaluation_output": "",
-    "current_score": 20,
+    "current_score": 20.0,
     "similarity_level": "Low",
     "similarity_pct": 10,
     "similarity_note": "Awaiting evaluation.",
@@ -195,6 +194,16 @@ default_states = {
 for key, val in default_states.items():
     if key not in st.session_state:
         st.session_state[key] = val
+
+# Score Override Callback
+def update_score_override():
+    new_val = st.session_state["score_override_val"]
+    if "bundle_text" in st.session_state and st.session_state["bundle_text"]:
+        st.session_state["bundle_text"] = re.sub(
+            r"TOTAL SCORE:\s*[\d\.]+\s*/",
+            f"TOTAL SCORE: {new_val:g} /",
+            st.session_state["bundle_text"]
+        )
 
 # Callback Handlers
 def clear_prompt():
@@ -383,7 +392,7 @@ FEEDBACK SUMMARY:
                 if len(parts) > 1:
                     bundle = parts[1].replace("---END BUNDLE---", "").strip()
 
-            # Sanitize any accidental LaTeX formatting from feedback bundle
+            # Sanitize any accidental LaTeX formatting
             bundle = sanitize_latex(bundle)
 
             # Extract numeric score awarded
@@ -438,33 +447,31 @@ if st.session_state.get("evaluation_output"):
     # Score Adjustment Override & Prof Review Flag
     adj_col1, adj_col2 = st.columns([2, 2])
     with adj_col1:
-        adjusted_score = st.number_input(
+        st.number_input(
             "Final Score Override (adjusts copyable text automatically):",
             min_value=0.0,
             max_value=float(total_points),
             value=float(st.session_state["current_score"]),
-            step=0.5
+            step=0.5,
+            key="score_override_val",
+            on_change=update_score_override
         )
     with adj_col2:
         st.write("")
         st.write("")
         if st.button("🚩 Flag for Prof. Eagan Review", type="secondary"):
+            current_override = st.session_state.get("score_override_val", st.session_state["current_score"])
             flag_entry = {
                 "Timestamp": datetime.now().strftime("%I:%M:%S %p"),
-                "Score": f"{adjusted_score} / {total_points}",
+                "Score": f"{current_override} / {total_points}",
                 "Submission Excerpt": st.session_state.get("student_input", "")[:250] + "...",
                 "Note": "Flagged by TA for professor check."
             }
             st.session_state["flagged_queue"].append(flag_entry)
             st.toast("Submission flagged for Prof. Eagan!", icon="🚩")
 
-    # Update bundle text if score was overridden
-    display_bundle = st.session_state["bundle_text"]
-    display_bundle = re.sub(
-        r"TOTAL SCORE:\s*[\d\.]+\s*/",
-        f"TOTAL SCORE: {adjusted_score:g} /",
-        display_bundle
-    )
+    # Current bundle reflecting reactive overrides
+    active_bundle = st.session_state["bundle_text"]
 
     # Copyable Student Feedback
     st.subheader("📋 McGraw-Hill Connect Feedback Package")
@@ -472,13 +479,12 @@ if st.session_state.get("evaluation_output"):
 
     st.text_area(
         label="Complete Student Feedback",
-        value=display_bundle,
-        height=240,
-        key="feedback_display"
+        value=active_bundle,
+        height=240
     )
 
     # Direct JavaScript Clipboard Copy
-    escaped_bundle = display_bundle.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+    escaped_bundle = active_bundle.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
     copy_component = f"""
     <div>
         <button id="copyBtn" style="
