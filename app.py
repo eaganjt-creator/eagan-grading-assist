@@ -1,9 +1,12 @@
 import os
+import re
+from datetime import datetime
+import pandas as pd
 import streamlit as st
 import streamlit.components.v1 as components
 from google import genai
 
-# Streamlit Page Setup
+# Page Setup
 st.set_page_config(
     page_title="Prof. Eagan's Grading Assist Tool | Purdue Daniels",
     page_icon="📋",
@@ -56,7 +59,7 @@ purdue_css = """
         border-color: #CEB888 !important;
     }
 
-    /* Secondary/Clear Buttons */
+    /* Secondary / Clear / Utility Buttons */
     div.stButton > button[kind="secondary"] {
         background-color: transparent !important;
         color: #CEB888 !important;
@@ -143,12 +146,25 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
-# Initialize session state keys for inputs
-for key in ["prompt_input", "solution_input", "student_input", "evaluation_output"]:
+# Initialize Session State
+default_states = {
+    "prompt_input": "",
+    "solution_input": "",
+    "student_input": "",
+    "evaluation_output": "",
+    "current_score": 20,
+    "similarity_level": "Low",
+    "similarity_pct": 10,
+    "similarity_note": "Awaiting evaluation.",
+    "bundle_text": "",
+    "grading_log": [],
+    "flagged_queue": []
+}
+for key, val in default_states.items():
     if key not in st.session_state:
-        st.session_state[key] = ""
+        st.session_state[key] = val
 
-# Clear Callbacks
+# Callback Handlers
 def clear_prompt():
     st.session_state["prompt_input"] = ""
 
@@ -158,14 +174,21 @@ def clear_solution():
 def clear_student():
     st.session_state["student_input"] = ""
 
-def clear_all():
-    st.session_state["prompt_input"] = ""
-    st.session_state["solution_input"] = ""
+def next_student_cleanup():
     st.session_state["student_input"] = ""
     st.session_state["evaluation_output"] = ""
+    st.session_state["bundle_text"] = ""
 
-# Point Scale Configuration
-top_col1, top_col2 = st.columns([1, 3])
+def clear_all(pin_active):
+    if not pin_active:
+        st.session_state["prompt_input"] = ""
+        st.session_state["solution_input"] = ""
+    st.session_state["student_input"] = ""
+    st.session_state["evaluation_output"] = ""
+    st.session_state["bundle_text"] = ""
+
+# Top Bar Controls
+top_col1, top_col2, top_col3 = st.columns([1, 1.5, 2])
 with top_col1:
     total_points = st.number_input(
         "Question Total Points:",
@@ -174,8 +197,12 @@ with top_col1:
         value=20,
         step=1
     )
+with top_col2:
+    st.write("")
+    st.write("")
+    pin_questions = st.checkbox("📌 Pin Question & Master Solution", value=True, help="Prevents resetting Prompt and Solution when clearing submissions for the next student.")
 
-# App UI: Input Fields
+# Input Form
 col1, col2 = st.columns(2)
 
 with col1:
@@ -210,18 +237,20 @@ with col2:
 
 st.divider()
 
-# Action Buttons: Evaluate & Reset All
-btn_col1, btn_col2 = st.columns([3, 1])
+# Primary Action Buttons
+btn_col1, btn_col2, btn_col3 = st.columns([2, 1, 1])
 with btn_col1:
     evaluate_btn = st.button("Evaluate Submission", type="primary", use_container_width=True)
 with btn_col2:
-    st.button("Reset / Clear All", type="secondary", on_click=clear_all, use_container_width=True)
+    st.button("➡️ Next Student", type="secondary", on_click=next_student_cleanup, use_container_width=True, help="Clears student submission and output while keeping question and solution.")
+with btn_col3:
+    st.button("Reset / Clear All", type="secondary", on_click=lambda: clear_all(pin_questions), use_container_width=True)
 
+# Run Evaluation
 if evaluate_btn:
     if not (question_prompt.strip() and connect_solution.strip() and student_submission.strip()):
         st.warning("Please paste all three fields before running evaluation.", icon="⚠️")
     else:
-        # Animated Loader: Solo Steam Engine Chugging Right-to-Left
         loader_placeholder = st.empty()
         loader_placeholder.markdown(
             """
@@ -244,8 +273,8 @@ EVALUATION CRITERIA & PROFESSOR'S GRADING PRINCIPLES:
    - Students must clearly label what each calculated number represents (e.g., 'Current Year Tax Savings', 'Recognized Gain', 'Present Value Factor').
    - If a computation is mathematically correct but unlabelled, or if a required conclusion lacks explanatory justification, deduct 10% to 25% of that specific milestone.
 2. DYNAMIC MILESTONE BREAKDOWN (Total: {total_points} Points):
-   - Analyze the provided Connect Master Solution and break the problem down into its natural logical milestones (typically between 2 to 6 milestones depending on the problem's scope).
-   - Give each milestone a descriptive, informative name reflecting the actual tax or accounting milestone (do NOT use generic labels like 'Milestone 1').
+   - Analyze the provided Connect Master Solution and break the problem down into its natural logical milestones (typically 2 to 6 milestones).
+   - Give each milestone a descriptive, informative name reflecting the actual tax/accounting concept (do NOT use generic labels like 'Milestone 1').
    - Ensure the sum of the maximum points across all milestones equals EXACTLY {total_points} points.
    - Only include a 'Recommendation / Decision' milestone if the prompt explicitly asks for one.
 3. CARRY-THROUGH ERROR PROTECTION:
@@ -290,75 +319,128 @@ FEEDBACK SUMMARY:
                 model="gemini-3.6-flash",
                 contents=prompt,
             )
-            st.session_state["evaluation_output"] = response.text
+            raw_output = response.text
+            st.session_state["evaluation_output"] = raw_output
             loader_placeholder.empty()
+
+            # Parse similarity
+            similarity_level = "Low"
+            similarity_pct = 10
+            similarity_note = "Wording appears authentic."
+            bundle = raw_output
+
+            if "SIMILARITY CONCERN LEVEL:" in raw_output:
+                try:
+                    level_line = [line for line in raw_output.split("\n") if "SIMILARITY CONCERN LEVEL:" in line][0]
+                    note_line = [line for line in raw_output.split("\n") if "SIMILARITY NOTE:" in line][0]
+                    similarity_note = note_line.replace("SIMILARITY NOTE:", "").strip()
+                    if "High" in level_line:
+                        similarity_level, similarity_pct = "High", 85
+                    elif "Moderate" in level_line:
+                        similarity_level, similarity_pct = "Moderate", 50
+                    else:
+                        similarity_level, similarity_pct = "Low", 15
+                except Exception:
+                    pass
+
+            if "---STUDENT FEEDBACK BUNDLE---" in raw_output:
+                parts = raw_output.split("---STUDENT FEEDBACK BUNDLE---")
+                if len(parts) > 1:
+                    bundle = parts[1].replace("---END BUNDLE---", "").strip()
+
+            # Extract numeric score awarded
+            score_match = re.search(r"TOTAL SCORE:\s*([\d\.]+)\s*/", bundle)
+            parsed_score = float(score_match.group(1)) if score_match else float(total_points)
+
+            st.session_state["similarity_level"] = similarity_level
+            st.session_state["similarity_pct"] = similarity_pct
+            st.session_state["similarity_note"] = similarity_note
+            st.session_state["bundle_text"] = bundle
+            st.session_state["current_score"] = parsed_score
+
+            # Auto-record in Session Log
+            timestamp_str = datetime.now().strftime("%I:%M:%S %p")
+            st.session_state["grading_log"].append({
+                "Timestamp": timestamp_str,
+                "Awarded": parsed_score,
+                "Max": total_points,
+                "Similarity": f"{similarity_level} ({similarity_pct}%)",
+                "Feedback Snippet": (bundle[:110] + "...") if len(bundle) > 110 else bundle
+            })
 
         except Exception as e:
             loader_placeholder.empty()
             st.error(f"Error calling model: {e}")
 
-# Render Evaluation Output
+# Render Evaluation Output Area
 if st.session_state.get("evaluation_output"):
-    output = st.session_state["evaluation_output"]
     st.divider()
 
-    similarity_level = "Low"
-    similarity_pct = 10
-    similarity_note = "Wording appears authentic."
-    bundle_text = output
-
-    if "SIMILARITY CONCERN LEVEL:" in output:
-        try:
-            level_line = [line for line in output.split("\n") if "SIMILARITY CONCERN LEVEL:" in line][0]
-            note_line = [line for line in output.split("\n") if "SIMILARITY NOTE:" in line][0]
-            similarity_note = note_line.replace("SIMILARITY NOTE:", "").strip()
-            
-            if "High" in level_line:
-                similarity_level = "High"
-                similarity_pct = 85
-            elif "Moderate" in level_line:
-                similarity_level = "Moderate"
-                similarity_pct = 50
-            else:
-                similarity_level = "Low"
-                similarity_pct = 15
-        except Exception:
-            pass
-
-    if "---STUDENT FEEDBACK BUNDLE---" in output:
-        parts = output.split("---STUDENT FEEDBACK BUNDLE---")
-        if len(parts) > 1:
-            bundle_text = parts[1].replace("---END BUNDLE---", "").strip()
-
+    # Similarity Concern Display
     st.subheader("🔍 Test Bank / Solution Similarity Gauge")
     col_meter, col_desc = st.columns([1, 2])
     with col_meter:
-        if similarity_level == "High":
-            st.error(f"⚠️ Concern Level: {similarity_level} (~{similarity_pct}%)")
-        elif similarity_level == "Moderate":
-            st.warning(f"⚡ Concern Level: {similarity_level} (~{similarity_pct}%)")
+        sim_lvl = st.session_state["similarity_level"]
+        sim_pct = st.session_state["similarity_pct"]
+        if sim_lvl == "High":
+            st.error(f"⚠️ Concern Level: {sim_lvl} (~{sim_pct}%)")
+        elif sim_lvl == "Moderate":
+            st.warning(f"⚡ Concern Level: {sim_lvl} (~{sim_pct}%)")
         else:
-            st.success(f"✅ Concern Level: {similarity_level} (~{similarity_pct}%)")
-        st.progress(similarity_pct / 100.0)
+            st.success(f"✅ Concern Level: {sim_lvl} (~{sim_pct}%)")
+        st.progress(sim_pct / 100.0)
 
     with col_desc:
-        st.write(f"**Analysis:** {similarity_note}")
-        if similarity_level in ["High", "Moderate"]:
-            st.caption("ℹ️ *TA Note: Verify if identical publisher phrasing or parentheticals were used.*")
+        st.write(f"**Analysis:** {st.session_state['similarity_note']}")
+        if sim_lvl in ["High", "Moderate"]:
+            st.caption("ℹ️ *TA Note: Check for exact publisher phrasing or textbook solution parentheticals.*")
 
     st.divider()
 
-    st.subheader("📋 McGraw-Hill Connect Complete Feedback Package")
-    st.caption("This bundle includes Score, Rubric Breakdown, and Narrative Feedback ready for Connect:")
+    # Score Adjustment Override & Prof Review Flag
+    adj_col1, adj_col2 = st.columns([2, 2])
+    with adj_col1:
+        adjusted_score = st.number_input(
+            "Final Score Override (adjusts copyable text automatically):",
+            min_value=0.0,
+            max_value=float(total_points),
+            value=float(st.session_state["current_score"]),
+            step=0.5
+        )
+    with adj_col2:
+        st.write("")
+        st.write("")
+        if st.button("🚩 Flag for Prof. Eagan Review", type="secondary"):
+            flag_entry = {
+                "Timestamp": datetime.now().strftime("%I:%M:%S %p"),
+                "Score": f"{adjusted_score} / {total_points}",
+                "Submission Excerpt": st.session_state.get("student_input", "")[:250] + "...",
+                "Note": "Flagged by TA for professor check."
+            }
+            st.session_state["flagged_queue"].append(flag_entry)
+            st.toast("Submission flagged for Prof. Eagan!", icon="🚩")
+
+    # Update bundle text if score was overridden
+    display_bundle = st.session_state["bundle_text"]
+    display_bundle = re.sub(
+        r"TOTAL SCORE:\s*[\d\.]+\s*/",
+        f"TOTAL SCORE: {adjusted_score:g} /",
+        display_bundle
+    )
+
+    # Copyable Student Feedback
+    st.subheader("📋 McGraw-Hill Connect Feedback Package")
+    st.caption("Score, Rubric Breakdown, and Student Feedback ready for Connect:")
 
     st.text_area(
         label="Complete Student Feedback",
-        value=bundle_text,
+        value=display_bundle,
         height=240,
         key="feedback_display"
     )
 
-    escaped_bundle = bundle_text.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
+    # Direct JavaScript Clipboard Copy
+    escaped_bundle = display_bundle.replace("\\", "\\\\").replace("`", "\\`").replace("$", "\\$")
     copy_component = f"""
     <div>
         <button id="copyBtn" style="
@@ -388,3 +470,33 @@ if st.session_state.get("evaluation_output"):
     </script>
     """
     components.html(copy_component, height=55)
+
+# Session Log & Flagged Queue at Bottom
+st.divider()
+exp_log, exp_flag = st.columns(2)
+
+with exp_log:
+    with st.expander(f"📊 Session Grading Audit Log ({len(st.session_state['grading_log'])} Graded)"):
+        if st.session_state["grading_log"]:
+            df_log = pd.DataFrame(st.session_state["grading_log"])
+            st.dataframe(df_log, use_container_width=True)
+            csv_data = df_log.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Download Session Grading Log (.csv)",
+                data=csv_data,
+                file_name=f"grading_session_log_{datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv",
+                type="secondary"
+            )
+        else:
+            st.caption("No submissions graded yet this session.")
+
+with exp_flag:
+    with st.expander(f"🚩 Flagged for Prof. Eagan ({len(st.session_state['flagged_queue'])} Items)"):
+        if st.session_state["flagged_queue"]:
+            for idx, item in enumerate(st.session_state["flagged_queue"]):
+                st.markdown(f"**#{idx+1} [{item['Timestamp']}] Score: {item['Score']}**")
+                st.text(item["Submission Excerpt"])
+                st.markdown("---")
+        else:
+            st.caption("No edge-case submissions currently flagged.")
