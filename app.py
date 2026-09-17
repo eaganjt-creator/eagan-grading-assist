@@ -171,9 +171,9 @@ CONNECT FEEDBACK:
 [Write 2 to 4 concise, professional, and encouraging sentences directly to the student. Highlight what was done correctly, point out missing labels, calculation errors, or incomplete justifications, and state the correct final values. This text will be pasted directly into McGraw-Hill Connect.]
 """
             try:
-                # Calls the current standard flash model on the GenAI SDK
+                # Direct call to gemini-3.6-flash
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-3.6-flash",
                     contents=prompt,
                 )
                 output = response.text
