@@ -177,17 +177,34 @@ if not api_key:
 
 client = genai.Client(api_key=api_key)
 
+# Top Bar Controls
+top_col1, top_col2, top_col3 = st.columns([1, 1.5, 2])
+with top_col1:
+    total_points = st.number_input(
+        "Question Total Points:",
+        min_value=1,
+        max_value=100,
+        value=20,
+        step=1
+    )
+with top_col2:
+    st.write("")
+    st.write("")
+    pin_questions = st.checkbox("📌 Pin Question & Master Solution", value=True, help="Prevents resetting Prompt and Solution when clearing submissions for the next student.")
+
 # Initialize Session State
 default_states = {
     "prompt_input": "",
     "solution_input": "",
     "student_input": "",
     "evaluation_output": "",
-    "current_score": 20.0,
+    "current_score": float(total_points),
+    "original_ai_score": float(total_points),
     "similarity_level": "Low",
     "similarity_pct": 10,
     "similarity_note": "Awaiting evaluation.",
     "bundle_text": "",
+    "base_bundle_text": "",
     "grading_log": [],
     "flagged_queue": []
 }
@@ -198,12 +215,22 @@ for key, val in default_states.items():
 # Score Override Callback
 def update_score_override():
     new_val = st.session_state["score_override_val"]
-    if "bundle_text" in st.session_state and st.session_state["bundle_text"]:
-        st.session_state["bundle_text"] = re.sub(
-            r"TOTAL SCORE:\s*[\d\.]+\s*/",
-            f"TOTAL SCORE: {new_val:g} /",
-            st.session_state["bundle_text"]
+    orig_val = st.session_state.get("original_ai_score", new_val)
+    bundle = st.session_state.get("base_bundle_text", "")
+    
+    if bundle:
+        clean_bundle = re.sub(
+            r"TOTAL SCORE:\s*[\d\.]+\s*/\s*[\d\.]+(\s*\[[^\]]+\])?",
+            f"TOTAL SCORE: {new_val:g} / {total_points}",
+            bundle
         )
+        if abs(new_val - orig_val) >= 0.01:
+            clean_bundle = re.sub(
+                rf"TOTAL SCORE:\s*{new_val:g}\s*/\s*{total_points}",
+                f"TOTAL SCORE: {new_val:g} / {total_points} [Note: Final score reflects manual grader discretion/adjustment from initial rubric assessment of {orig_val:g}/{total_points}]",
+                clean_bundle
+            )
+        st.session_state["bundle_text"] = clean_bundle
 
 # Callback Handlers
 def clear_prompt():
@@ -219,6 +246,7 @@ def next_student_cleanup():
     st.session_state["student_input"] = ""
     st.session_state["evaluation_output"] = ""
     st.session_state["bundle_text"] = ""
+    st.session_state["base_bundle_text"] = ""
 
 def clear_all(pin_active):
     if not pin_active:
@@ -227,21 +255,7 @@ def clear_all(pin_active):
     st.session_state["student_input"] = ""
     st.session_state["evaluation_output"] = ""
     st.session_state["bundle_text"] = ""
-
-# Top Bar Controls
-top_col1, top_col2, top_col3 = st.columns([1, 1.5, 2])
-with top_col1:
-    total_points = st.number_input(
-        "Question Total Points:",
-        min_value=1,
-        max_value=100,
-        value=20,
-        step=1
-    )
-with top_col2:
-    st.write("")
-    st.write("")
-    pin_questions = st.checkbox("📌 Pin Question & Master Solution", value=True, help="Prevents resetting Prompt and Solution when clearing submissions for the next student.")
+    st.session_state["base_bundle_text"] = ""
 
 # Input Form
 col1, col2 = st.columns(2)
@@ -392,7 +406,7 @@ FEEDBACK SUMMARY:
                 if len(parts) > 1:
                     bundle = parts[1].replace("---END BUNDLE---", "").strip()
 
-            # Sanitize any accidental LaTeX formatting
+            # Sanitize LaTeX
             bundle = sanitize_latex(bundle)
 
             # Extract numeric score awarded
@@ -402,8 +416,10 @@ FEEDBACK SUMMARY:
             st.session_state["similarity_level"] = similarity_level
             st.session_state["similarity_pct"] = similarity_pct
             st.session_state["similarity_note"] = similarity_note
+            st.session_state["base_bundle_text"] = bundle
             st.session_state["bundle_text"] = bundle
             st.session_state["current_score"] = parsed_score
+            st.session_state["original_ai_score"] = parsed_score
 
             # Auto-record in Session Log
             timestamp_str = datetime.now().strftime("%I:%M:%S %p")
@@ -470,7 +486,7 @@ if st.session_state.get("evaluation_output"):
             st.session_state["flagged_queue"].append(flag_entry)
             st.toast("Submission flagged for Prof. Eagan!", icon="🚩")
 
-    # Current bundle reflecting reactive overrides
+    # Current bundle reflecting reactive overrides + note
     active_bundle = st.session_state["bundle_text"]
 
     # Copyable Student Feedback
