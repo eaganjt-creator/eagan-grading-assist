@@ -13,6 +13,38 @@ st.set_page_config(
     layout="wide"
 )
 
+# Text Sanitizer to strip LaTeX/Greek symbols for clean Connect copy-pasting
+def sanitize_latex(text: str) -> str:
+    """Strips LaTeX wrappers, equations, and symbols to ensure clean plain text for Connect."""
+    if not text:
+        return ""
+    # Common math symbols & operators
+    text = text.replace(r"\Delta", "Change in ")
+    text = text.replace(r"\times", " x ")
+    text = text.replace(r"\cdot", " * ")
+    text = text.replace(r"\approx", " approx. ")
+    text = text.replace(r"\le", " <= ")
+    text = text.replace(r"\ge", " >= ")
+    text = text.replace(r"\neq", " != ")
+
+    # Remove \text{...} wrappers -> ...
+    text = re.sub(r"\\text\{([^}]+)\}", r"\1", text)
+
+    # Remove \frac{A}{B} -> (A / B)
+    text = re.sub(r"\\frac\{([^}]+)\}\{([^}]+)\}", r"(\1 / \2)", text)
+
+    # Remove math display delimiters like $(formula)$ -> (formula)
+    text = re.sub(r"\$(\([^\$]+\))\$", r"\1", text)
+
+    # Remove inline math syntax wrapping without touching regular currency like $24,000
+    # Matches $...$ containing words or operators (+, -, *, /, =)
+    text = re.sub(r"\$([A-Za-z\s\+\-\*\/\=\(\)]+)\$", r"\1", text)
+
+    # Clean leftover backslashes
+    text = text.replace("\\", "")
+
+    return text
+
 # Purdue Old Gold & Black Styling + Right-to-Left Locomotive Animation
 purdue_css = """
 <style>
@@ -285,6 +317,9 @@ EVALUATION CRITERIA & PROFESSOR'S GRADING PRINCIPLES:
 5. TEST BANK / PUBLISHER SOLUTION SIMILARITY ANALYSIS:
    - Assess whether the student's submission displays unnatural or verbatim similarity to the Connect publisher solution wording (e.g., identical phrasing, matching parenthetical notes, or textbook-verbatim prose vs. typical authentic student wording).
    - Rate similarity concern as: Low (0-25%), Moderate (26-60%), or High (61-100%).
+6. STRICT PLAIN TEXT FORMATTING (NO LATEX OR MARKDOWN MATH):
+   - Do NOT use LaTeX math equations, markup syntax, or backslashes under any circumstances (never output \\Delta, \\text{{}}, \\frac{{}}{{}}, or surround math with dollar signs).
+   - Express all formulas in natural, clean keyboard plain text (e.g., write '(Change in Tax / Change in Income)' instead of LaTeX formulas). Connect does not support LaTeX rendering.
 
 INPUT DATA:
 ----------------------------------------
@@ -347,6 +382,9 @@ FEEDBACK SUMMARY:
                 parts = raw_output.split("---STUDENT FEEDBACK BUNDLE---")
                 if len(parts) > 1:
                     bundle = parts[1].replace("---END BUNDLE---", "").strip()
+
+            # Sanitize any accidental LaTeX formatting from feedback bundle
+            bundle = sanitize_latex(bundle)
 
             # Extract numeric score awarded
             score_match = re.search(r"TOTAL SCORE:\s*([\d\.]+)\s*/", bundle)
